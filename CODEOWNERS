@@ -1,0 +1,8 @@
+# Default reviewers
+* @jkosnik11 @AStremplat @ankharat2026 @loginowskid
+
+# CI workflows and supporting scripts
+/.github/ @AStremplat @loginowskid
+
+# Definitive dataset submission lists
+/submissions/ @jkosnik11 @ankharat2026
