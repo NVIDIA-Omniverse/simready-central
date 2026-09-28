@@ -403,7 +403,7 @@ logical asset name as the folder in the dataset; the globally qualified package
 ID remains inside `com.nvidia.simready.packaging.json`:
 
 ```bash
-hf upload <namespace>/<dataset> <path-to-asset> ./<logical-asset-name> --repo-type dataset --delete "./<logical-asset-name>/*"
+hf upload <namespace>/<dataset> <path-to-asset> <logical-asset-name> --repo-type dataset --delete "*"
 ```
 
 - This copies the asset package to your Hugging Face dataset into the
@@ -411,9 +411,15 @@ hf upload <namespace>/<dataset> <path-to-asset> ./<logical-asset-name> --repo-ty
 - The top-level folder must exactly match the logical asset name used in the
   package name. It must not include the asset version; otherwise submission
   fails.
-- The `--delete` option removes all files already in the folder `<logical-asset-name>`.
-  It is safe to include on a first upload (it is a no-op when the folder is empty)
-  and is required when updating an existing asset.
+- The `--delete "*"` option removes all files already in the folder
+  `<logical-asset-name>`. It is safe to include on a first upload (it is a no-op
+  when the folder is empty) and is required when updating an existing asset so
+  that files removed in the new version do not linger. The pattern is matched
+  relative to the upload folder, so it must be `"*"`; a repo-rooted pattern such
+  as `"./<logical-asset-name>/*"` matches nothing. For the same reason, pass the
+  folder as `<logical-asset-name>` and not `./<logical-asset-name>`: a leading
+  `./` is normalized on upload but not when computing deletions, so it would
+  leave the delete a silent no-op.
 - It is required that each asset package is stored in its own folder, and that
   folder cannot contain other asset packages. Do **not** upload an asset into
   the subtree of another asset.
