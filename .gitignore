@@ -1,2 +1,13 @@
 __pycache__/
 submission-diff/
+
+# Scratch files. A one-off script written to make an edit is not the edit.
+_*
+
+# IDE state
+.idea/
+
+# Package markers are not scratch files.
+!__init__.py
+# Nor is code copied into a skill folder that happens to start with one.
+!.agents/skills/**/_*.py
