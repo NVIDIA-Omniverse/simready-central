@@ -4,7 +4,8 @@
 
 OEMs submitting assets to the SimReady Catalog must first complete the
 [OEM onboarding process](docs/onboarding.md). Once onboarded, follow the
-[OEM asset submission guide](docs/oem-asset-submission-guide.md) to validate,
+[OEM asset submission guide](docs/oem-asset-submission-guide.md) -- and
+[Acceptance criteria](docs/acceptance-criteria.md) for what each check id means -- to validate,
 package, upload, and propose assets for review.
 
 An asset-submission pull request must contain only changes to the applicable

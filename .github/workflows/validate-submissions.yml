@@ -3,33 +3,100 @@
 
 name: Validate submissions
 
+# pull_request_target runs with this repository's permissions, so everything it
+# executes has to come from a branch only a reviewer can change. The filter is
+# half of that: without it a pull request could target any branch, and GitHub
+# reads this file from the default branch, so the filter itself is out of a
+# submitter's reach.
+#
+# qa-staging is a generated copy of this tree for QA, checked by its own
+# scripts. Being listed here only lets the workflow fire: the first job runs
+# only if the base is the default branch or the branch named in the repository
+# variable QA_STAGING_BRANCH, which only an administrator can set. Without that
+# variable a pull request against qa-staging executes nothing.
 on:
   pull_request_target:
+    branches:
+      - main
+      - qa-staging
 
 permissions:
   contents: read
   pull-requests: write
+  checks: write          # one check run per rule that failed
 
 jobs:
-  validate-submission-files:
-    name: Validate submission files
+  validate-package-list:
+    name: Validate package list syntax and consistency
+    # The base has to be a branch only a reviewer can change: the default
+    # branch, or the one an administrator named in QA_STAGING_BRANCH. Both are
+    # protected. Anything else is refused here, before a single step runs, and
+    # the jobs below inherit the refusal through `needs`.
+    if: >-
+      github.base_ref == github.event.repository.default_branch
+      || (vars.QA_STAGING_BRANCH != '' && github.base_ref == vars.QA_STAGING_BRANCH)
     runs-on: ubuntu-latest
+    # HF_TOKEN is an environment secret, and the environment's deployment
+    # branches are the protected bases. A pull_request_target job runs on the
+    # base's ref, so it qualifies; a workflow a submitter edits on their own
+    # branch runs on that branch's ref or the merge ref, and GitHub refuses it
+    # the environment and the secret with it. A repository secret would be
+    # handed to any such workflow.
+    environment: hf_read_minimal
     steps:
+      # Run the scripts of the branch the pull request targets. The condition
+      # above only lets a protected branch get this far, so that code is
+      # trusted, and a pull request against qa-staging is checked by
+      # qa-staging's own scripts. The pull request's commits are fetched in
+      # the next step as data only.
       - name: Check out the trusted validator
         uses: actions/checkout@v4
         with:
-          ref: ${{ github.event.pull_request.base.sha }}
+          ref: ${{ github.base_ref }}
           fetch-depth: 0
 
-      - name: Fetch the proposed commit
+      - name: Fetch the commits under review
         env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
           HEAD_SHA: ${{ github.event.pull_request.head.sha }}
-        run: git fetch --no-tags origin "$HEAD_SHA"
+        run: git fetch --no-tags origin "$BASE_SHA" "$HEAD_SHA"
+
+      # What the repository grants whoever opened this. A submitter holds write
+      # and may change submissions/ only; a maintainer holds admin and may change
+      # anything. Read here rather than in the validator so the validator stays
+      # something you can run on your own machine.
+      - name: Read the author's permission
+        id: author
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const { data } = await github.rest.repos.getCollaboratorPermissionLevel({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              username: context.payload.pull_request.user.login,
+            });
+            core.setOutput("permission", data.role_name || data.permission);
 
       - name: Validate changed submission files
         env:
           BASE_SHA: ${{ github.event.pull_request.base.sha }}
           HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          # Read Hugging Face with a token rather than anonymously. Here the
+          # token is the organisation's, so a dataset private to it can be
+          # verified. On the public instance it is a token with no permissions
+          # at all, held for its request quota: it reads nothing anonymous
+          # cannot, so a private dataset fails SUB.018 there, as it should for
+          # a public catalog. Optional: without one every request is anonymous.
+          # Only a pull request onto a protected base gets this far, and the
+          # code that handles the token is that base's, so no pull request can
+          # change what is done with it.
+          HF_TOKEN: ${{ secrets.HF_TOKEN }}
+          # Where the findings are written for the comment step below. The run
+          # summary gets the same text: a submitter should not have to open
+          # Actions to be told what to fix.
+          SUBMISSION_REPORT_PATH: submission-findings.md
+          SUBMISSION_FINDINGS_JSON: submission-findings.json
+          PR_AUTHOR_PERMISSION: ${{ steps.author.outputs.permission }}
         run: |
           REVIEW_BASE=$(git merge-base "$BASE_SHA" "$HEAD_SHA")
           echo "Comparing PR head $HEAD_SHA with review base $REVIEW_BASE"
@@ -45,12 +112,211 @@ jobs:
           if-no-files-found: error
           retention-days: 14
 
-      - name: Report successful submission checks
+      # One comment, carrying whichever outcome the checks reached. A failing
+      # pull request used to get annotations and nothing else -- correct, and
+      # placed where nobody looks first. The comment is what a submitter reads,
+      # so it now says what failed, why, and what to do, with each rule id linked
+      # to its entry in the acceptance criteria.
+      #
+      # always(), or a failing job skips the step along with the rest of itself
+      # and the pull request is left saying nothing at all.
+      - name: Report the package list checks
+        if: always()
         uses: actions/github-script@v7
         with:
           script: |
+            const fs = require("fs");
             const marker = "<!-- simready-submission-validation -->";
-            const body = `${marker}\nSubmission checks completed. Added and removed package lists are available in the **submission-package-diff** workflow artifact.`;
+            const passed = "${{ job.status }}" === "success";
+            // Written by the validator, and only when it has findings. Reading
+            // it rather than re-deriving anything keeps the comment, the run
+            // summary and the annotations saying the same thing.
+            let report = "";
+            try { report = fs.readFileSync("submission-findings.md", "utf8"); } catch {}
+            const body = passed
+              ? `${marker}\n**Package list checks passed.** The submission file and the packages it names are consistent. Next: the package scan.`
+              : `${marker}\n${report || "The checks failed before they could report why. See the run log."}`;
+            const comments = await github.paginate(github.rest.issues.listComments, {
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number,
+              per_page: 100,
+            });
+            const existing = comments.find(comment =>
+              comment.user?.login === "github-actions[bot]" && comment.body?.includes(marker)
+            );
+            if (existing) {
+              await github.rest.issues.updateComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                comment_id: existing.id,
+                body,
+              });
+            } else {
+              await github.rest.issues.createComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: context.issue.number,
+                body,
+              });
+            }
+
+
+      # A row in the Checks tab for each rule that failed, because that list is
+      # where somebody looks first and a single red line saying the job failed
+      # tells them nothing. The annotations put each finding on its own line in
+      # the file; these say which rules were broken and how to fix them.
+      - name: Report each rule that failed
+        if: failure()
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require("fs");
+            // Two collections, not one: the rules that were broken, and the
+            // files that broke them. A file is its own entry carrying its own
+            // checks, so neither is buried inside the other.
+            let found = { rules: [], files: [] };
+            try { found = JSON.parse(fs.readFileSync("submission-findings.json", "utf8")); } catch {}
+            const filesFor = id => (found.files || [])
+              .map(f => ({ path: f.path, checks: (f.checks || []).filter(c => c.id === id) }))
+              .filter(f => f.checks.length);
+            for (const rule of found.rules || []) {
+              const name = rule.id ? `${rule.id} - ${rule.title}` : rule.title;
+              const where = rule.where.length ? `\n\n${rule.where.map(w => `\`${w}\``).join(", ")}` : "";
+              await github.rest.checks.create({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                // The pull request's own commit. pull_request_target runs against
+                // the base, so context.sha would attach these to the wrong one.
+                head_sha: context.payload.pull_request.head.sha,
+                name,
+                status: "completed",
+                conclusion: rule.level === "error" ? "failure" : "neutral",
+                output: {
+                  title: rule.title,
+                  // A check run's summary renders markdown, unlike an
+                  // annotation, so this is where the id is actually clickable.
+                  // The rule states itself once -- what it is, and how to fix
+                  // it -- and each offending file is its own heading below,
+                  // with what is wrong with that one underneath. Run together
+                  // as a single list there was no telling a fix step from a
+                  // file name.
+                  summary: (rule.url ? `[**${rule.id}**](${rule.url}) — ${rule.title}\n\n` : "")
+                    + rule.lines.map(l => `- ${l}`).join("\n")
+                    + filesFor(rule.id).map(f =>
+                        `\n\n#### \`${f.path}\`\n`
+                        + f.checks.map(c => c.note).filter(Boolean).join("\n")).join("")
+                    + (rule.files_omitted ? `\n\n_and ${rule.files_omitted} more_` : "")
+                    + where,
+                },
+              });
+            }
+
+  security-scan:
+    name: Scan submitted packages on Hugging Face
+    needs: validate-package-list
+    runs-on: ubuntu-latest
+    # The same environment as the validator, for the same secret.
+    environment: hf_read_minimal
+    # The scanner reads one file list per asset folder and the first bytes of
+    # each file, within request budgets it enforces itself; a run that would
+    # need longer than this is one it has already refused as too large.
+    timeout-minutes: 20
+    # contents: read, not {}. The job needs no permission to do its work -- it
+    # reads OEM content from Hugging Face and writes nothing -- but this
+    # repository is PRIVATE, and actions/checkout authenticates with the job's
+    # token. With no permissions at all the checkout fails on "repository not
+    # found", which reads like the repo is missing rather than like the token
+    # cannot see it. Read is the least that lets the scanner exist at all.
+    permissions:
+      contents: read
+    # Whether this pull request added any packages at all. A change to code,
+    # tests or documentation adds none, and the reporting job below has no way
+    # of telling that apart from a clean scan -- so it commented that every
+    # submitted package was in order on pull requests that submitted nothing,
+    # and notified everyone watching.
+    outputs:
+      packages: ${{ steps.added.outputs.count }}
+    steps:
+      # The base, as for the validator: a protected branch, and the one whose
+      # scripts this pull request is meant to be checked with.
+      - name: Check out the trusted scanner
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.base_ref }}
+          persist-credentials: false
+
+      - name: Download the added package list
+        uses: actions/download-artifact@v4
+        with:
+          name: submission-package-diff
+          path: submission-diff
+
+      - name: Count what was added
+        id: added
+        run: |
+          n=$(python3 -c "import json;print(len(json.load(open('submission-diff/added-packages.json'))))")
+          echo "count=$n" >> "$GITHUB_OUTPUT"
+          echo "$n package(s) added by this pull request"
+
+      - name: Scan the newly added packages
+        env:
+          # Same report the validator writes, for the job below to post. This
+          # job cannot post it itself: it holds contents:read on purpose.
+          SUBMISSION_REPORT_PATH: scan-findings.md
+          # The same environment secret the validator reads with. Without it the
+          # scanner is anonymous and reports a dataset private to
+          # the organisation as unreadable (SUB.018) although the validator, one
+          # job earlier, read every package definition from it. Optional,
+          # exactly as above.
+          HF_TOKEN: ${{ secrets.HF_TOKEN }}
+        run: python3 .github/scripts/security_scan.py submission-diff/added-packages.json
+
+      # Carried out of this job rather than posted from it. The scanner reads
+      # OEM-controlled content from Hugging Face, which is exactly why it holds
+      # no write permission -- and a comment needs one.
+      - name: Keep the scan findings for the reporting job
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: scan-findings
+          path: scan-findings.md
+          if-no-files-found: ignore
+          retention-days: 14
+
+  # A job of its own, so the write permission a comment needs is never held by
+  # the job that reads OEM content. This one touches nothing but the artifact.
+  report-scan:
+    name: Report the package scan
+    needs: security-scan
+    # Nothing submitted, nothing to report. Saying "every submitted package is
+    # in order" about no packages is true and useless, and it arrived as a
+    # comment and an email on every code change.
+    if: >-
+      always() && needs.security-scan.result != 'skipped'
+      && needs.security-scan.outputs.packages != '0'
+    runs-on: ubuntu-latest
+    permissions:
+      pull-requests: write
+    steps:
+      - name: Download the scan findings
+        uses: actions/download-artifact@v4
+        continue-on-error: true
+        with:
+          name: scan-findings
+
+      - name: Report the scan on the pull request
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require("fs");
+            const marker = "<!-- simready-submission-scan -->";
+            const passed = "${{ needs.security-scan.result }}" === "success";
+            let report = "";
+            try { report = fs.readFileSync("scan-findings.md", "utf8"); } catch {}
+            const body = passed
+              ? `${marker}\n**Package scan passed.** The submitted packages hold only files a package may contain. Next: review.`
+              : `${marker}\n${report || "The scan failed before it could report why. See the run log."}`;
             const comments = await github.paginate(github.rest.issues.listComments, {
               owner: context.repo.owner,
               repo: context.repo.repo,
