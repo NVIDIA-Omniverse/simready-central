@@ -1,0 +1,38 @@
+# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+
+name: Test the workflow scripts
+
+# Every script a workflow runs, and the guards over the documents: the validator
+# and the scanner, the publish tooling, the acceptance criteria against the
+# checks, the whole tree against what may not be published. A change to a
+# Markdown file is as much its business as a change to a script, so it runs on
+# every pull request except a submission-only one, which the validator checks
+# instead, and on every push to main.
+#
+# Not on other pushes: a feature branch is tested by its pull request, a build
+# tag runs this suite itself as its first step, and the generated branches are
+# built from a main that was already tested.
+on:
+  pull_request:
+    paths-ignore:
+      - 'submissions/**'
+  push:
+    branches:
+      - main
+    paths-ignore:
+      - 'submissions/**'
+
+permissions:
+  contents: read
+
+jobs:
+  test-scripts:
+    name: Test the workflow scripts
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Run the test suite
+        run: python3 -m unittest discover -s tests -p 'test_*.py' -v
