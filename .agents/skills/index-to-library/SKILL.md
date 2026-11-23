@@ -74,11 +74,14 @@ Work through these in order.
    directory. Start with the repository containing this `SKILL.md`; otherwise,
    look for a checkout containing `docs/index-to-library-guide.md` in the
    current directory or one of its parents. If no checkout exists, retrieve the
-   guide and both scripts, `docs/examples/index_to_library.py` and
-   `docs/examples/library_page.py`, from the same repository and revision as
-   this skill using authenticated GitHub access. If that fails, ask the user to
-   authenticate or provide them; never treat an unrelated Git repository as
-   SimReady Central.
+   guide, both scripts, `docs/examples/index_to_library.py` and
+   `docs/examples/library_page.py`, and the package list
+   `requirements-oem-submit.txt` from where this skill came from. From the
+   GitHub repository `NVIDIA-Omniverse/simready-central`, clone it. From the
+   dataset, which needs an account with access to it:
+   `hf download nvidia/simready-central-library docs/index-to-library-guide.md docs/examples/index_to_library.py docs/examples/library_page.py requirements-oem-submit.txt --repo-type dataset --local-dir <a folder>`.
+   If that fails, ask the user to log in with `hf auth login` or provide them;
+   never treat an unrelated Git repository as SimReady Central.
 2. Read `docs/index-to-library-guide.md` completely before acting and follow its
    current workflow exactly. The guide is the single source of truth for the
    environment, the commands, the record layout and where each field comes
@@ -162,8 +165,9 @@ the JSON.
 ## Supported versions
 
 - Skill: `version` in the frontmatter, the release series this skill belongs to.
-- Tools: the `.venv-submit` environment of the submission guide, at the versions
-  its one-time setup installs; the benchmark environment is not needed.
+- Tools: the `.venv-submit` environment the guide's setup installs, at the
+  versions `requirements-oem-submit.txt` pins; the benchmark environment is not
+  needed.
 - Scripts: `docs/examples/index_to_library.py` and `docs/examples/library_page.py`
   from the same repository revision as this file. The guide, the scripts and
   this skill change together.

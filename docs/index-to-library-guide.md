@@ -25,25 +25,44 @@ the steps with agent support.
 
 ## Preconditions
 
-- The `.venv-submit` environment from the submission guide's
-  [one-time setup](oem-asset-submission-guide.md#one-time-setup) (step 2 of the
-  setup block). It provides `simready-manage`, the validator with its USD
-  runtime, the SimReady Foundation tier package, and the Hugging Face tools.
-  The benchmark environment and Isaac Sim are not needed here.
-- A checkout of this repository, for the submission file and the two example
-  scripts in `docs/examples/`.
-- Read access to the dataset. A public dataset needs no account. For a private
-  one, run `hf auth login` with an account that can read it.
+- **Python 3.12** on your command-line path, on Windows 10 or 11, or Linux, on
+  a 64-bit x86 machine.
+- A checkout of this repository, for the submission file, the pinned package
+  list `requirements-oem-submit.txt` and the two example scripts in
+  `docs/examples/`.
+- The tools, installed once from that list into an environment of their own,
+  as [Setup](#setup) below shows. If you have the `.venv-submit` environment
+  of the OEM asset submission guide already, it is the same one: skip the
+  setup.
+- Read access to the Hugging Face datasets the packages are stored in, which
+  the list's URLs name. A public one needs no account. For a private one, run
+  `hf auth login` with an account that can read it.
 - Disk space for the packages. They carry textures and the full benchmark
   result tree, roughly 150 MB per asset.
 - A web browser.
 
-The commands below use bash syntax; on Windows, run them from Git Bash as the
-submission guide describes. Replace `<LibraryDir>` with an absolute path to a
-directory of your choosing and `<checkout>` with the path of this repository.
+The commands below use bash syntax; on Windows, run them from Git Bash.
+Replace `<SimreadyDir>` and `<LibraryDir>` with absolute paths to directories
+of your choosing and `<checkout>` with the path of this repository.
+
+## Setup
+
+Once per machine. The environment provides `simready-manage`, the validator
+with its USD runtime, the SimReady Foundation tier package and the Hugging
+Face tools, at the versions the package list pins. The benchmark environment
+and Isaac Sim are not needed here.
 
 ```bash
-source <SimreadyDir>/.venv-submit/bin/activate
+python3.12 -m venv <SimreadyDir>/.venv-submit      # Windows: py -3.12 -m venv <SimreadyDir>/.venv-submit
+source <SimreadyDir>/.venv-submit/bin/activate     # Windows: source <SimreadyDir>/.venv-submit/Scripts/activate
+python -V                                          # confirm 3.12 before installing
+pip install -r <checkout>/requirements-oem-submit.txt
+```
+
+Then, in every new shell:
+
+```bash
+source <SimreadyDir>/.venv-submit/bin/activate     # Windows: source <SimreadyDir>/.venv-submit/Scripts/activate
 simready-manage -V
 mkdir -p <LibraryDir>/workspace
 ```
@@ -126,7 +145,7 @@ trimmed record:
   "source_url": "https://huggingface.co/datasets/nvidia/simready-assets/resolve/2464ca.../box_cardboard_a01/com.nvidia.simready.packaging.json",
   "owner": "nvidia",
   "version": "2026.09.18_083633927809",
-  "license": "cc-by-4.0",
+  "license": "CC-BY-4.0",
   "validation": {
     "profile": "Robotics-Prop",
     "profile_version": "<version>",
@@ -213,11 +232,13 @@ the same workspace.
 Three searches worth trying, first on the page and then on the JSON, since a
 consumer of the library does not need the page:
 
-**Which assets may go into an index that admits CC-BY-4.0 only?** Tick
-`cc-by-4.0` under *License (package definition)*. The license is the one the
-package definition declares, which is what the submission checks compare against
-the dataset card. The detail drawer shows the USD's own `asset_license` beside
-it, because the two are written by different tools and spelled differently.
+**Which assets may go into an index that admits CC-BY-4.0 only?** Tick the
+license under *License (package definition)*, spelled as the packages declare
+it; the sample assets say `CC-BY-4.0`. The license is the one the package
+definition declares, which is what the submission checks compare against the
+dataset card, ignoring case. The detail drawer shows the USD's own
+`asset_license` beside it, because the two are written by different tools and
+spelled differently.
 
 **Which assets fail which validation feature?** Set *Group by* to *Failed
 validation feature*. Feature ids such as `FET_004_PHYSX` are shown with the
@@ -234,7 +255,7 @@ import json, collections
 library = json.load(open("<LibraryDir>/workspace/library.json"))
 assets = library["assets"]
 
-print("CC-BY-4.0:", [a["asset_name"] for a in assets if a["license"] == "cc-by-4.0"])
+print("CC-BY-4.0:", [a["asset_name"] for a in assets if (a["license"] or "").lower() == "cc-by-4.0"])
 
 by_feature = collections.defaultdict(list)
 for a in assets:
@@ -264,7 +285,7 @@ Every reader is one function in `index_to_library.py`, named in the last column.
 | `usd_author`, `usd_license`, `category`, `asset_type`, `physics_variants`, `usd_metadata` | `SimReady_Metadata` in the root USD's `customLayerData` | `pxr.Sdf.Layer.FindOrOpen`; the same read `simready-manage` uses for its workspace cache. Only the root layer is opened | `find_root_usd`, `read_usd_metadata` |
 | `thumbnail` | `.thumbs/256x256/<root usd>.png` | path check | `find_thumbnail` |
 | `review_report` (library level) | `simready_review_report.html`, written into the workspace by `verify()` | path check | `collect` |
-| `validation.features[].display_name`, `runtime` | the `features/` folder of every installed tier | the `simready.tier` entry-point group, which each tier registers under | `load_feature_names` |
+| `validation.features[].display_name`, `runtime` | the `features/` and `capabilities/` folders of every installed tier | the `simready.tier` entry-point group, which each tier registers under | `load_feature_names` |
 | `tool_versions` | the environment | `importlib.metadata` | `tool_versions` |
 
 Three things to know when reading the records:
@@ -312,10 +333,11 @@ library is built from the same readers.
 
 ## References
 
-- [OEM asset submission guide](oem-asset-submission-guide.md): the environment
-  and how the packages, sidecars and thumbnails are produced.
-- [Acceptance criteria](acceptance-criteria.md): the checks a submission passes
-  before its URLs enter a submission file.
+- [OEM asset submission guide](https://huggingface.co/datasets/nvidia/simready-central-library/blob/main/docs/oem-asset-submission-guide.md): the environment
+  and how the packages, sidecars and thumbnails are produced. On the SimReady
+  Central dataset, which is open to its contributors.
+- [Acceptance criteria](https://huggingface.co/datasets/nvidia/simready-central-library/blob/main/docs/acceptance-criteria.md): the checks a submission passes
+  before its URLs enter a submission file. On the same dataset.
 - [SimReady Foundation](https://github.com/NVIDIA/simready-foundation): the
   profiles, features and metadata the records refer to.
 - `simready-manage pull --help` and `simready-manage verify --help`.

@@ -16,7 +16,8 @@ one source, and is named for it:
     read_packaging         com.nvidia.simready.packaging.json  package id and license
     read_usd_metadata      the root USD's SimReady_Metadata    category, mass, extents, variants
     find_thumbnail         .thumbs/256x256/<root usd>.png
-    load_feature_names     the installed tiers' features/      display names for FET ids
+    load_feature_names     the installed tiers' features/      display names for feature ids
+                           and capabilities/
 
 Nothing here runs a validator or edits a package. A source an asset does not
 carry is listed under ``missing`` in its record, and the record is written
@@ -177,16 +178,24 @@ def load_feature_names() -> dict[str, dict[str, dict]]:
     """``{feature id: {version: {display_name, runtime}}}`` from every installed tier.
 
     A tier registers itself under the ``simready.tier`` entry-point group and
-    ships one JSON file per feature version in its ``features`` folder.
+    ships one JSON file per feature version in its ``features`` folder, and one
+    per capability version in its ``capabilities`` folder where it has one. A
+    file names its version in a ``version`` field or, without one, at the end
+    of its id (``FET003_RigidBody.PhysX.0-4-0``), which is then the id a
+    validation result lists the feature under.
     """
     from importlib.metadata import entry_points
 
     names: dict[str, dict[str, dict]] = {}
     for entry_point in entry_points(group=TIER_ENTRY_POINT_GROUP):
         tier = entry_point.load()
-        for path in sorted(Path(tier.features_path).glob("*.json")):
+        folders = (tier.features_path, getattr(tier, "capability_contracts_path", None))
+        for path in sorted(path for folder in folders if folder for path in Path(folder).glob("*.json")):
             data = json.loads(path.read_text(encoding="utf-8"))
-            names.setdefault(data["id"], {})[data["version"]] = {
+            if "id" not in data:
+                continue
+            version = data.get("version") or data["id"].rsplit(".", 1)[-1]
+            names.setdefault(data["id"], {})[version] = {
                 "display_name": data.get("display_name"),
                 "runtime": data.get("runtime"),
             }

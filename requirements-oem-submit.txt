@@ -1,0 +1,76 @@
+# Fully pinned contents of the OEM submission venv (.venv-submit) from
+# docs/oem-asset-submission-guide.md, resolved on 2026-11-20 against public
+# PyPI, Linux x86_64, Python 3.12.
+#
+# Direct requirements the list was resolved from, each at the newest version of
+# its series on that day; the versions listed below are the ones the guide's
+# setup was tested with:
+#   huggingface_hub  (the newest release; the guide's upgrade step installs the
+#     newest too, and this file then holds it at the version listed below)
+#   simready-foundation-tier-core[evaluate]~=2026.10.0
+#   simready-foundation-tier-aif~=2026.10.0
+#   simready-foundation-tier-sensors~=2026.10.0
+#   simready-manage~=2026.10.0  simready-validate~=2026.10.0  simready-package~=2026.8.0
+#   simready-evaluate~=2026.10.0  simready-evaluate-engine-kit~=2026.10.0
+#
+# On Windows pip also installs colorama, which tqdm and typer require there only;
+# it is not pinned here.
+#
+# The guide fetches this file from the dataset and installs it with pip -r into
+# .venv-submit. Isaac Sim must NOT be installed in this venv; the guide installs
+# it into .venv-isaac.
+
+aiofiles==25.1.0
+annotated-doc==0.0.7
+annotated-types==0.8.0
+anyio==4.16.0
+click==8.5.1
+filelock==3.32.7
+fsspec==2026.9.0
+gitignore_parser==0.1.13
+h11==0.16.0
+hf-xet==1.8.0
+httpcore2==2.16.2
+httpx2==2.16.2
+huggingface_hub==2.4.0
+idna==3.20
+ImageIO==2.38.2
+imageio-ffmpeg==0.8.1
+Jinja2==3.1.6
+markdown-it-py==4.3.0
+MarkupSafe==3.0.4
+MaterialX==1.39.5
+mdurl==0.1.2
+networkx==3.7
+numpy==2.5.5
+ovpackage==0.3.0
+packaging==26.3
+physx-usd-schemas==25.11.1
+pillow==13.0.0
+prompt_toolkit==3.0.53
+pydantic==2.14.4
+pydantic_core==2.50.5
+Pygments==2.21.0
+PyYAML==6.0.3
+rich==15.0.0
+semver==3.1.2
+shellingham==1.5.4
+simready-evaluate==2026.10.0
+simready-evaluate-engine-kit==2026.10.0
+simready-foundation-tier-aif==2026.10.0
+simready-foundation-tier-core==2026.10.0
+simready-foundation-tier-newton==2026.10.0
+simready-foundation-tier-sensors==2026.10.0
+simready-manage==2026.10.0
+simready-package==2026.8.0
+simready-validate==2026.10.0
+toml==0.10.2
+tqdm==4.70.1
+truststore==0.10.5
+typer==0.29.2
+typing-inspection==0.4.5
+typing_extensions==4.16.0
+usd-core==26.11
+usd-profiles-nvidia==1.23.0
+usd-validation-nvidia==1.23.0
+wcwidth==0.9.4
